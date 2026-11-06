@@ -1,0 +1,37 @@
+// Detection: Impossible travel between successful sign-ins
+// MITRE ATT&CK: T1078.004 Valid Accounts: Cloud Accounts (tactic: Initial Access, TA0001)
+// Severity: High
+// Logic: for each user, compare every successful sign-in with the previous one.
+//        Flag it when the city changes and the implied travel speed is above 900 km/h
+//        (faster than a passenger plane).
+// Known VPN: sign-ins from the company VPN IP are excluded, because the VPN makes a user
+//        appear in Frankfurt and creates fake "travel". Without this, VPN users were the top alert.
+// Grouping: one alert per user per day. An attack can produce two legs
+//        (into the attacker's city and back to the real user), shown in the Legs column.
+// City coordinates: a small lookup table with approximate city centres, because the log has city names only.
+// Known false positives: a new VPN or proxy IP that is not in the list yet.
+// Limits: an attacker who signs in through the company VPN, or from the same city as the user,
+//        is not detected. Two separate attacks on one user on the same day become one alert.
+let KnownVpnIPs = dynamic(["203.0.113.250"]);
+let CityCoords = datatable(City:string, Lat:real, Lon:real)
+[
+    "Oslo", 59.91, 10.75,
+    "Bergen", 60.39, 5.32,
+    "Stavanger", 58.97, 5.73,
+    "Stockholm", 59.33, 18.07,
+    "Frankfurt", 50.11, 8.68,
+    "Singapore", 1.35, 103.82
+];
+SigninLogs
+| where ResultType == "0"
+| where IPAddress !in (KnownVpnIPs)
+| lookup kind=inner CityCoords on City
+| sort by UserPrincipalName asc, TimeGenerated asc
+| extend PrevUser = prev(UserPrincipalName), PrevTime = prev(TimeGenerated), PrevCity = prev(City), PrevLat = prev(Lat), PrevLon = prev(Lon)
+| where UserPrincipalName == PrevUser and City != PrevCity
+| extend DistanceKm = round(geo_distance_2points(PrevLon, PrevLat, Lon, Lat) / 1000, 0), Hours = round((TimeGenerated - PrevTime) / 1h, 2)
+| extend SpeedKmh = round(DistanceKm / Hours, 0)
+| where SpeedKmh > 900
+| summarize Legs = count(), arg_max(SpeedKmh, *) by UserPrincipalName, Day = bin(TimeGenerated, 1d)
+| project UserPrincipalName, PrevCity, PrevTime, City, TimeGenerated, DistanceKm, Hours, SpeedKmh, Legs
+| sort by SpeedKmh desc

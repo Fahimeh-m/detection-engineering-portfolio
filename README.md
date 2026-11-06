@@ -10,7 +10,7 @@ The rules run on an Azure Data Explorer free cluster. KQL is the same query lang
 - [x] Synthetic sign-in and mailbox logs with four planted attacks
 - [x] Logs loaded into Azure Data Explorer and row counts checked
 - [x] Detection rule for password spraying
-- [ ] Detection rule for impossible travel
+- [x] Detection rule for impossible travel
 - [ ] Detection rule for MFA fatigue
 - [ ] Detection rule for suspicious inbox forwarding
 - [ ] Measure each rule against the answer key (precision and recall)
@@ -31,7 +31,9 @@ After loading the data, I compared the row counts with the source files: 57,113 
 
 ![Mailbox event row count](docs/screenshots/02_office_activity_count.png)
 
-## Day 2 (6 November 2026): password spraying
+## Day 2 (6 November 2026)
+
+### Password spraying
 
 Password spraying (MITRE ATT&CK T1110.003) means trying one or a few common passwords against many accounts, once each. It is designed to avoid account lockout, because no single account fails often enough to be locked.
 
@@ -55,7 +57,29 @@ To check that the second condition really matters, I removed it. The same thresh
 
 ![Without the success-rate filter](docs/screenshots/07_password_spray_without_success_filter.png)
 
-The rule is in `detections/password_spraying.kql`, with notes on the logic, thresholds, known false positives and limits. Precision and recall against the answer key will come once all four rules are written.
+The rule is in `detections/password_spraying.kql`.
+
+### Impossible travel
+
+Impossible travel (MITRE ATT&CK T1078.004) means the same account signs in from two places that are too far apart for the time between them. It usually means someone else has the password, so this rule only looks at successful sign-ins.
+
+The logs only have city names, so I added a small table with approximate coordinates for each city. For every user, I compared each successful sign-in with the previous one and calculated the distance and the implied travel speed.
+
+The fastest "trip" was not an attack. It was a normal user who signed in through the company VPN in Frankfurt and then from Oslo one minute later, which looks like 54,900 km/h. Three more VPN users also showed up among the top ten.
+
+![Top travel speeds before the VPN filter](docs/screenshots/08_impossible_travel_top_speeds.png)
+
+A company knows its own VPN addresses, so I excluded the VPN IP and kept only trips faster than 900 km/h, roughly the speed of a passenger plane. That left six rows: five sign-ins from Singapore about 25 minutes after a sign-in in Norway, and one return trip when the real user signed in again in Stavanger.
+
+![Rule result after the VPN filter](docs/screenshots/09_impossible_travel_rule_result.png)
+
+One attack should give one alert, so I grouped the results into one alert per user per day. The final rule returns five alerts for five attacks. The Legs column shows that one of them had two parts: the trip to Singapore and the trip back.
+
+![Final rule result](docs/screenshots/10_impossible_travel_final_rule.png)
+
+The rule is in `detections/impossible_travel.kql`.
+
+Both rule files include notes on the logic, thresholds, known false positives and limits. Precision and recall against the answer key will come once all four rules are written.
 
 ## Repository
 
@@ -69,6 +93,8 @@ The rule is in `detections/password_spraying.kql`, with notes on the logic, thre
 The data is synthetic and simpler than real logs. Good results here show the method, not how the rules would perform in a real company.
 
 An attacker who spreads attempts over many hours or many IPs can stay under the password spraying threshold.
+
+The impossible travel rule does not see an attacker who signs in through the company VPN or from the same city as the user. City coordinates are approximate, and two separate attacks on one user on the same day become one alert.
 
 ## Tools
 

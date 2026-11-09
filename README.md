@@ -12,7 +12,7 @@ The rules run on an Azure Data Explorer free cluster. KQL is the same query lang
 - [x] Detection rule for password spraying
 - [x] Detection rule for impossible travel
 - [x] Detection rule for MFA fatigue
-- [ ] Detection rule for suspicious inbox forwarding
+- [x] Detection rule for suspicious inbox forwarding
 - [ ] Measure each rule against the answer key (precision and recall)
 - [ ] Add one or two rules on real public attack logs
 - [ ] Add an OT / power-grid security section
@@ -101,6 +101,24 @@ The Medium level was not triggered in this data, so it is still untested.
 
 The rule is in `detections/mfa_fatigue.kql`.
 
+### Suspicious inbox forwarding
+
+An inbox forwarding rule (MITRE ATT&CK T1114.003, Email Collection: Email Forwarding Rule) sends copies of a user's mail to another address. Attackers like it because the rule keeps working even after the stolen password is changed.
+
+The mailbox log has 44 new inbox rules. 31 do not forward at all, 9 forward to addresses inside the company domain, and 4 forward to an outside domain. Like the MFA data, this is too clean: no normal rule forwards outside the company, while in a real company some people forward work mail to a personal address.
+
+![External forwarding rules](docs/screenshots/12_inbox_forward_external_rules.png)
+
+The four external rules came from the same two IPs used in the impossible travel and MFA fatigue attacks. To check this, I joined the mailbox log with the sign-in log on user and IP. Each rule was created 10 minutes after a sign-in by the same user from the same IP, so the forwarding rules are the next step of attacks the other rules already found. The fixed 10-minute gap comes from how I generated the data; real attackers are less regular. Only four of the eight compromised accounts got a forwarding rule, so this rule also has to work on its own.
+
+![Forwarding rules linked to sign-ins](docs/screenshots/13_inbox_forward_linked_signins.png)
+
+Companies have different policies, so the rule has a switch, ExternalForwardingAllowed. If external forwarding is not allowed, every external forwarding rule is High. If it is allowed, a rule created from a known office or VPN IP is Medium, and a rule from any other IP is High. For this fictional company the switch is off, and the rule returns four alerts for four planted rules, all High.
+
+![Final rule result](docs/screenshots/14_inbox_forward_final_rule.png)
+
+The rule is in `detections/inbox_forwarding.kql`.
+
 ## Repository
 
 - `notebooks/`: the notebook that generates the synthetic data
@@ -117,6 +135,8 @@ An attacker who spreads attempts over many hours or many IPs can stay under the 
 The impossible travel rule does not see an attacker who signs in through the company VPN or from the same city as the user. City coordinates are approximate, and two separate attacks on one user on the same day become one alert.
 
 The MFA fatigue rule misses an attacker who sends fewer than five prompts, waits more than 15 minutes between them, or changes IP. The data has no normal MFA failures, so the rule's precision on real logs is unknown.
+
+The inbox forwarding rule does not catch forwarding to an internal mailbox the attacker already controls. The data has no normal external forwarding, so the rule's precision on real logs is unknown.
 
 ## Tools
 

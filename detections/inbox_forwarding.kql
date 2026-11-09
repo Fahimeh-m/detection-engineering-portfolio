@@ -1,0 +1,34 @@
+// Rule: Suspicious inbox forwarding rule to an external domain
+// MITRE ATT&CK: T1114.003 - Email Collection: Email Forwarding Rule
+// Tactic: Collection (TA0009)
+// Severity: High if external forwarding is not allowed, or if the rule was created from an unknown IP;
+//           Medium if external forwarding is allowed and the rule came from a known company IP
+// Data: OfficeActivity (synthetic)
+//
+// Logic:
+// 1. New inbox rules that forward mail (ForwardTo is not empty)
+// 2. Keep only rules that forward outside the company domain
+// 3. Set severity from the company policy switch and the client IP
+//
+// Possible false positives:
+// - Approved forwarding to an outside accountant, ticket system or partner
+// Limitations:
+// - Forwarding to an internal mailbox the attacker already controls is not caught
+// - A rule created through the company VPN gets Medium when forwarding is allowed
+// - In the data, all 4 rules came 10 minutes after a suspicious sign-in from the same IP;
+//   real attackers are less regular
+//
+// Result on synthetic data: 4 alerts = 4 planted rules, all High
+
+let ExternalForwardingAllowed = false;
+let CompanyDomain = "nordlys-demo.example";
+let KnownCompanyIPs = dynamic(["203.0.113.10", "203.0.113.20", "203.0.113.30", "203.0.113.40", "203.0.113.250"]);
+OfficeActivity
+| where Operation == "New-InboxRule"
+| where isnotempty(ForwardTo)
+| extend ForwardDomain = tostring(split(ForwardTo, "@")[1])
+| where ForwardDomain != CompanyDomain
+| extend FromKnownIP = ClientIP in (KnownCompanyIPs)
+| extend Severity = iff(not(ExternalForwardingAllowed) or not(FromKnownIP), "High", "Medium")
+| project TimeGenerated, UserId, ClientIP, FromKnownIP, ForwardTo, Severity
+| sort by TimeGenerated asc

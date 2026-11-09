@@ -13,7 +13,7 @@ The rules run on an Azure Data Explorer free cluster. KQL is the same query lang
 - [x] Detection rule for impossible travel
 - [x] Detection rule for MFA fatigue
 - [x] Detection rule for suspicious inbox forwarding
-- [ ] Measure each rule against the answer key (precision and recall)
+- [x] Measure each rule against the answer key (precision and recall)
 - [ ] Add one or two rules on real public attack logs
 - [ ] Add an OT / power-grid security section
 
@@ -119,6 +119,29 @@ Companies have different policies, so the rule has a switch, ExternalForwardingA
 
 The rule is in `detections/inbox_forwarding.kql`.
 
+### Measuring the rules against the answer key
+
+The KQL rules found the attacks on Azure Data Explorer from behaviour alone. The answer key lists every planted attack with its type. It was never loaded into the cluster, so the rules could not use it. I kept it on my own computer and compared it with the rule results in PowerShell.
+
+I counted incidents, not rows. For example, one password spraying attack from one IP is one incident, even though it touched 150 accounts.
+
+| Rule | Planted incidents | Alerts | True positives | False positives | Missed | Precision | Recall |
+|---|---|---|---|---|---|---|---|
+| Password spraying | 1 | 1 | 1 | 0 | 0 | 100% | 100% |
+| Impossible travel | 5 | 5 | 5 | 0 | 0 | 100% | 100% |
+| MFA fatigue | 3 | 3 | 3 | 0 | 0 | 100% | 100% |
+| Inbox forwarding | 4 | 4 | 4 | 0 | 0 | 100% | 100% |
+
+I also checked that the alerts named the same users and IPs as the answer key, not just the same number of alerts. They did for all four rules.
+
+These numbers are too good to mean much on their own, because the synthetic data has fewer look-alikes than real logs. The more useful result is how much tuning mattered:
+
+- Password spraying without the success-rate condition: 17 alerts for 1 real attack, a precision of about 6%.
+- Impossible travel without the VPN filter: VPN users took four of the top ten speeds.
+- MFA fatigue with fixed one-hour windows: 4 alerts for 3 attacks, because one attack was split in two.
+
+A fairer test would add normal MFA failures and normal external forwarding to the generated data. That is the next improvement.
+
 ## Repository
 
 - `notebooks/`: the notebook that generates the synthetic data
@@ -140,4 +163,4 @@ The inbox forwarding rule does not catch forwarding to an internal mailbox the a
 
 ## Tools
 
-Python, pandas, NumPy, KQL, Azure Data Explorer, Git, GitHub
+Python, pandas, NumPy, KQL, Azure Data Explorer, PowerShell, Git, GitHub

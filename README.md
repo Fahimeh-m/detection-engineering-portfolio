@@ -11,7 +11,7 @@ The rules run on an Azure Data Explorer free cluster. KQL is the same query lang
 - [x] Logs loaded into Azure Data Explorer and row counts checked
 - [x] Detection rule for password spraying
 - [x] Detection rule for impossible travel
-- [ ] Detection rule for MFA fatigue
+- [x] Detection rule for MFA fatigue
 - [ ] Detection rule for suspicious inbox forwarding
 - [ ] Measure each rule against the answer key (precision and recall)
 - [ ] Add one or two rules on real public attack logs
@@ -81,6 +81,26 @@ The rule is in `detections/impossible_travel.kql`.
 
 Both rule files include notes on the logic, thresholds, known false positives and limits. Precision and recall against the answer key will come once all four rules are written.
 
+## Day 3 (9 November 2026)
+
+### MFA fatigue
+
+MFA fatigue (MITRE ATT&CK T1621, Multi-Factor Authentication Request Generation) means an attacker who already has a password keeps triggering MFA prompts on the user's phone until the user approves one, often just to make the prompts stop.
+
+In the logs, an MFA prompt that is not completed has ResultType 500121, and a successful sign-in has ResultType 0. I first listed every user with 500121 failures. Only three users had any, all from one IP in Frankfurt, with 17, 15 and 12 failures.
+
+That result is too clean. In a real company, normal users also fail MFA prompts now and then, for example when their phone is not at hand. My synthetic data has no normal MFA failures, so I wrote the rule for real conditions rather than only for this data.
+
+The rule has two severity levels. A burst of 5 or more failures for the same user and IP, followed by a successful sign-in from the same IP within 30 minutes, is High, because the user most likely approved a prompt. A burst with no success afterwards is Medium, because the attack is still going on or has failed.
+
+My first version grouped failures into fixed one-hour windows. It returned four alerts for three attacks, because one attack crossed the top of the hour and was split in two. I replaced the fixed windows with session windows: failures stay in the same burst as long as the gap between them is under 15 minutes. The final rule returns three alerts for three attacks, all High. In each case the successful sign-in came within one minute of the last failed prompt.
+
+![Final rule result](docs/screenshots/11_mfa_fatigue_rule_result.png)
+
+The Medium level was not triggered in this data, so it is still untested.
+
+The rule is in `detections/mfa_fatigue.kql`.
+
 ## Repository
 
 - `notebooks/`: the notebook that generates the synthetic data
@@ -95,6 +115,8 @@ The data is synthetic and simpler than real logs. Good results here show the met
 An attacker who spreads attempts over many hours or many IPs can stay under the password spraying threshold.
 
 The impossible travel rule does not see an attacker who signs in through the company VPN or from the same city as the user. City coordinates are approximate, and two separate attacks on one user on the same day become one alert.
+
+The MFA fatigue rule misses an attacker who sends fewer than five prompts, waits more than 15 minutes between them, or changes IP. The data has no normal MFA failures, so the rule's precision on real logs is unknown.
 
 ## Tools
 

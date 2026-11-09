@@ -1,0 +1,40 @@
+// Rule: MFA fatigue (repeated MFA prompts, then approval)
+// MITRE ATT&CK: T1621 - Multi-Factor Authentication Request Generation
+// Tactic: Credential Access (TA0006)
+// Severity: High if a successful sign-in follows the burst (user approved); Medium if no success follows
+// Data: SigninLogs (synthetic). ResultType "500121" = MFA not completed, "0" = success
+//
+// Logic:
+// 1. Group MFA failures per user and IP into bursts (session window: gap <= 15m, burst <= 1h)
+// 2. Keep bursts with 5 or more failures
+// 3. Look for a successful sign-in from the same user and IP within 30m after the last failure
+//
+// Possible false positives:
+// - A real user whose phone is not at hand, who then approves the prompt themselves
+// Limitations:
+// - Attacker who sends fewer than 5 prompts, or spreads them over more than 15 minutes
+// - Attacker who changes IP between prompts, or succeeds from a different IP
+// - Synthetic data has no normal MFA failures, so precision on real data is unknown
+// - The Medium branch (no success) was not triggered in this data
+//
+// Result on synthetic data: 3 alerts = 3 planted attacks, all High
+
+let Threshold = 5;
+let MaxGap = 15m;
+let MaxBurst = 1h;
+let Failures = SigninLogs
+| where ResultType == "500121"
+| sort by UserPrincipalName asc, IPAddress asc, TimeGenerated asc
+| extend Burst = row_window_session(TimeGenerated, MaxBurst, MaxGap, UserPrincipalName != prev(UserPrincipalName) or IPAddress != prev(IPAddress))
+| summarize FailCount = count(), FirstFail = min(TimeGenerated), LastFail = max(TimeGenerated)
+    by UserPrincipalName, IPAddress, City, Burst
+| where FailCount >= Threshold;
+let Successes = SigninLogs
+| where ResultType == "0"
+| project UserPrincipalName, IPAddress, SuccessTime = TimeGenerated;
+Failures
+| join kind=leftouter Successes on UserPrincipalName, IPAddress
+| extend SuccessAfter = iff(SuccessTime > LastFail and SuccessTime <= LastFail + 30m, SuccessTime, datetime(null))
+| summarize SuccessTime = min(SuccessAfter) by UserPrincipalName, IPAddress, City, FailCount, FirstFail, LastFail
+| extend Severity = iff(isnotnull(SuccessTime), "High", "Medium")
+| sort by FailCount desc

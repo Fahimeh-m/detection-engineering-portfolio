@@ -79,7 +79,7 @@ One attack should give one alert, so I grouped the results into one alert per us
 
 The rule is in `detections/impossible_travel.kql`.
 
-Both rule files include notes on the logic, thresholds, known false positives and limits. Precision and recall against the answer key will come once all four rules are written.
+Both rule files include notes on the logic, thresholds, known false positives and limits.
 
 ## Day 3 (9 November 2026)
 

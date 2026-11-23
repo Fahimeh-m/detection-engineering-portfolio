@@ -88,3 +88,5 @@ Each rule file documents its logic, thresholds, known false positives and limits
 ## Tools
 
 KQL, Azure Data Explorer, Python, pandas, NumPy, PowerShell, Git, GitHub
+
+© 2026 Fahimeh Mottaghi. All rights reserved.
